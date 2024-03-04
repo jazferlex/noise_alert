@@ -2,8 +2,9 @@ import 'dart:typed_data';
 import 'dart:math';
 import 'package:flutter_audio_capture/flutter_audio_capture.dart';
 import 'package:flutter/material.dart';
+import 'package:noise_alert/statspoint.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:noise_alert/line_chart.dart';
 
 void main() {
   runApp(const MyApp());
@@ -24,9 +25,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-
-
-
 class NoiseListener extends StatefulWidget {
   const NoiseListener({super.key});
 
@@ -36,15 +34,17 @@ class NoiseListener extends StatefulWidget {
 
 class _NoiseListenerState extends State<NoiseListener> {
   final FlutterAudioCapture _audioCapture = FlutterAudioCapture();
-  List<FlSpot> decibelData = [];
+  List<StatPoint> decibelDataPoints = [];
+  int counter = 0;
   bool _isRecording = false;
   double _currentDecibel = 0.0;
 
   @override
   void initState() {
-    super.initState();
-    _requestPermission();
+      super.initState();// Add an initial spot
+      _requestPermission();
   }
+
 
   Future<void> _requestPermission() async {
     await Permission.microphone.request();
@@ -54,31 +54,29 @@ class _NoiseListenerState extends State<NoiseListener> {
       // Handle permission denial gracefully
     }
   }
+
   void listener(dynamic obj) {
     var buffer = Float64List.fromList(obj.cast<double>());
     var newDecibelLevel = calculateDecibelLevel(buffer);
     if (newDecibelLevel.isFinite) {
       setState(() {
         _currentDecibel = newDecibelLevel;
-        decibelData.add(FlSpot(decibelData.length.toDouble(), _currentDecibel));
+        decibelDataPoints.insert(decibelDataPoints.length, StatPoint(x: counter.toDouble(), y: _currentDecibel));
+        counter++;
+        // Limit data points to ensure smooth graph performance
+        if (decibelDataPoints.length > 200) {
+          decibelDataPoints.removeAt(0);
+        }
       });
     }
   }
+
   double calculateDecibelLevel(Float64List buffer) {
-      // Convert the audio buffer to a List
     List<double> audioData = List.from(buffer);
-
-    // Calculate the root mean square (RMS) of the audio signal
     double rms = sqrt(audioData.map((x) => x * x).reduce((a, b) => a + b) / audioData.length);
-
-    // Set a reference amplitude (you may need to adjust this based on your specific use case)
     double referenceAmplitude = 1.0;
-
-    // Calculate the decibel level using the formula
-
     double decibelLevel = 20 * log(rms / referenceAmplitude);
-
-    return decibelLevel;
+    return (decibelLevel* 100).roundToDouble() / 100;
   }
 
   void onError(Object obj) {
@@ -105,16 +103,11 @@ class _NoiseListenerState extends State<NoiseListener> {
       appBar: AppBar(
         title: const Text('Noise Listener'),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            
-            Text('Current Noise Level: ${_currentDecibel.toStringAsFixed(2)} dB'),
-            // Add other UI elements based on noise detection (e.g., notifications)
-          ],
-        ),
-        
+      body: Column(
+        children: [
+          Text('Current Noise Level: ${_currentDecibel.toStringAsFixed(2)} dB'),
+          LineChartWidget(decibelDataPoints)
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _isRecording ? _stopRecording : _startRecording,
@@ -123,4 +116,3 @@ class _NoiseListenerState extends State<NoiseListener> {
     );
   }
 }
-
